@@ -1,14 +1,19 @@
 import random
-
-import pygame, time
+import pygame
 import sys
-from player import Player
-from ball import Ball
-import settings as set
+import time
+import numpy as np
+import torch
+import torch.nn as nn
 
+sys.path.insert(0, '..')
+import settings as set
+import player
+import ball
+import ann
 
 class Pong:
-	def __init__(self, screen, num):
+	def __init__(self, screen, num, model = None):
 		self.screen = screen
 		self.game_over = False
 		self.count = 0
@@ -18,8 +23,10 @@ class Pong:
 		self.playerA = None
 		self.playerB = None
 		self.ball = None
-		self.data = []
-		self.data_all = []
+		self.model = model
+		self.pred = [[0,0], [0, set.HEIGHT//2], [0,set.HEIGHT]]
+		self.data_beg = np.zeros(shape=(num,4), dtype=float)
+		self.data_end = np.zeros(shape=(num,set.HEIGHT), dtype=float)
 		if self.players:
 			self.players = True
 			self.font = pygame.font.SysFont('Bauhaus 93', 60)
@@ -34,38 +41,38 @@ class Pong:
 	# create and add player to the screen
 	def generate_world(self):
 		if self.players:
-			self.playerA = Player(0, set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
-			self.playerB = Player(set.WIDTH - set.player_width,  set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
-		self.ball = Ball(set.WIDTH // 2 - set.player_width, set.HEIGHT - set.player_width, set.ball_vx_range, set.ball_vy_range, set.ball_size)
-		self.data = [self.ball.rect.x, self.ball.rect.y, self.ball.vx, self.ball.vy, 0.0]
+			self.playerA = player.Player(0, set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
+			self.playerB = player.Player(set.WIDTH - set.player_width,  set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
+		self.ball = ball.Ball(set.WIDTH // 2 - set.player_width, set.HEIGHT // 2 - set.player_width, set.ball_vx_range, set.ball_vy_range, set.ball_size)
+		self.data_beg[self.count, 0] = self.ball.rect.x / set.WIDTH
+		self.data_beg[self.count, 1] = self.ball.rect.y / set.HEIGHT
+		self.data_beg[self.count, 2] = self.ball.vx / max(set.ball_vx_range+set.ball_vy_range)
+		self.data_beg[self.count, 3] = self.ball.vy / max(set.ball_vx_range+set.ball_vy_range)
 
 	def ball_hit(self):
-		# if ball is not hit and pass through table sides
 		hit = False
 		if self.ball.rect.left >= set.WIDTH:
-			self.data[4] = set.HEIGHT // 2 # if ball traveled to player side we want the middle of the area as target
 			if self.players:
 				self.playerA.score += 1
 				self.ball.rect.x = set.WIDTH // 2
 				time.sleep(1)
 			else:
-				self.count += 1
-				self.ball.rect.x = random.randint(self.ball.rect.width, set.WIDTH-2*self.ball.rect.width)
-				self.ball.rect.y = random.randint(0, set.HEIGHT-self.ball.rect.height)
-				self.ball.direction = random.choice(["left", "right"]) # for data generation we use random directions
+				raise ValueError('not allowed')	# for data generation the ball always flies left so this cant happen
 			hit = True
 
 		elif self.ball.rect.right <= 0:
-			self.data[4] = self.ball.rect.y # if ball hit the AI side we want this position
 			if self.players:
+				self.data_end[self.count, self.ball.rect.y:(self.ball.rect.y+self.ball.rect.height)] = 1 # if ball hit the AI side we want this position
+				self.count += 1
 				self.playerB.score += 1
 				self.ball.rect.x = set.WIDTH // 2
 				time.sleep(1)
 			else:
+				self.data_end[self.count, self.ball.rect.y:(self.ball.rect.y+self.ball.rect.height)] = 1 # if ball hit the AI side we want this position
 				self.count += 1
 				self.ball.rect.x = random.randint(self.ball.rect.width, set.WIDTH-2*self.ball.rect.width)
 				self.ball.rect.y = random.randint(0, set.HEIGHT-self.ball.rect.height)
-				self.ball.direction = random.choice(["left", "right"]) # for data generation we use random directions
+				self.ball.direction = "left" # for data generation the ball always flies left
 			hit = True
 
 		if self.players:
@@ -106,9 +113,10 @@ class Pong:
 
 	def game_end(self):
 		if self.winner is not None:
+			pygame.quit()
 			if self.players:
 				print(f"{self.winner} wins!!")
-			pygame.quit()
+				sys.exit()
 			return True
 		else:
 			return False
@@ -116,37 +124,48 @@ class Pong:
 	def update(self):
 		end = False
 
-		if self.players:
-			self.show_score()
-
-			self.playerA.update(self.screen)
-			self.playerB.update(self.screen)
-
 		hit = self.ball_hit()
 
 		if self.players:
+			self.show_score()
+			self.playerA.update(self.screen)
+			self.playerB.update(self.screen)
+
 			if self.playerA.score == self.score_limit:
 				self.winner = "Opponent"
 			elif self.playerB.score == self.score_limit:
 				self.winner = "You"
 			end = self.game_end()
-
 		else:
 			if self.count >= self.score_limit:
 				self.winner = ""
 			end = self.game_end()
 
 		self.ball.update(hit)
-		if self.players:
-			pygame.draw.rect(self.screen, self.ball.color, self.ball.rect)
 
-		if hit:
-			self.data_all.append(self.data)
-			print(self.data)
-			self.data[0] = self.ball.rect.x
-			self.data[1] = self.ball.rect.y
-			self.data[2] = self.ball.vx
-			self.data[3] = self.ball.vy
+		if hit and not end:
+			self.data_beg[self.count, 0] = self.ball.rect.x / set.WIDTH
+			self.data_beg[self.count, 1] = self.ball.rect.y / set.HEIGHT
+			self.data_beg[self.count, 2] = self.ball.vx / max(set.ball_vx_range+set.ball_vy_range)
+			self.data_beg[self.count, 3] = self.ball.vy / max(set.ball_vx_range+set.ball_vy_range)
+
+		if self.model is not None:
+			if self.ball.direction == "left":
+				if hit:
+					self.pred = [[0,0]]
+					data_beg = torch.tensor(self.data_beg[self.count], dtype=torch.float)
+					pred = self.model.predict(data_beg)
+					# softmax = nn.Softmax(dim=0)
+					# self.pred = [[1000.0 * softmax(pred)[i].item(), i] for i in  range(set.HEIGHT)]
+					self.pred += [[10*pred[i].item() if pred[i].item() >= 0 else 0, i] for i in range(set.HEIGHT)]
+					self.pred += [[0, set.HEIGHT]]
+			else:
+				self.pred = [[0,0], [0, set.HEIGHT//2], [0,set.HEIGHT]]
+
+		if self.players:
+			if self.model is not None:
+				pygame.draw.polygon(self.screen, pygame.Color('darkorange'), self.pred)
+			pygame.draw.rect(self.screen, self.ball.color, self.ball.rect)
 
 		return end
 
@@ -158,8 +177,8 @@ class Pong:
 
 				for event in pygame.event.get():
 					if event.type == pygame.QUIT:
-						pygame.quit()
-						sys.exit()
+						self.winner = "Nobody"
+						self.game_end()
 				self.player_move()
 
 			end = self.update()
@@ -168,4 +187,8 @@ class Pong:
 				self.draw()
 				self.FPS.tick(30)
 
-		return self.data
+		# for i in range(self.score_limit):
+		# 	print(self.data_beg[i])
+		# 	print(np.argmax(self.data_end[i]))
+
+		return ann.TrainingData.get_dataloader(self.data_beg, self.data_end, batch_size=20)

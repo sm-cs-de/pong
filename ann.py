@@ -6,13 +6,9 @@ import numpy as np
 
 
 class NeuralNetwork(nn.Module):
-    """
-    A flexible feedforward neural network class with configurable parameters.
-    """
-
     def __init__(self, input_size, output_size, hidden_layers=[64, 64],
-                 activation=nn.ReLU, optimizer_type=optim.Adam,
-                 loss_function=nn.MSELoss, learning_rate=0.001):
+                 activation=nn.ReLU, optimizer_type=optim.SGD,
+                 loss_function=nn.CrossEntropyLoss, learning_rate=0.001):
         """
         Initializes the neural network with given architecture and parameters.
         :param input_size: Number of input features.
