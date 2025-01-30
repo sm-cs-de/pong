@@ -1,0 +1,9 @@
+Ball:
+- added v_max parameter for x and y
+- added player parameter to set direction for data generation
+- replaced speed with random speed
+-> so the ball position is not sufficient to determine the impact location -> speed vector is needed
+
+Table & Pong:
+- removed Table class and united it with Pong
+- added functions/variables to play without gui and calculate the impact location
