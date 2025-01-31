@@ -1,6 +1,6 @@
 import pygame
 import random
-import settings as set
+import config as cfg
 
 pygame.init()
 
@@ -12,7 +12,7 @@ class Ball:
 		self.vy_range = vy_range
 		self.size = size
 		self.rect = pygame.Rect(x, y, size, size)
-		self.color = pygame.Color("red")
+		self.color = pygame.Color("blue")
 		self.direction = random.choice(["left", "right"])
 
 	def update(self, hit):
@@ -22,7 +22,7 @@ class Ball:
 			else:
 				self.vx = -random.randint(self.vx_range[0], self.vx_range[1])
 
-		if self.rect.y >= set.HEIGHT - self.size:
+		if self.rect.y >= cfg.HEIGHT - self.size:
 			if hit:
 				self.vy = -random.randint(self.vy_range[0], self.vy_range[1])
 			else:

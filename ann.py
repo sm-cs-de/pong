@@ -2,26 +2,23 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-import numpy as np
+import pong_game.config as cfg
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_size, output_size, hidden_layers=[64, 64],
-                 activation=nn.ReLU, optimizer_type=optim.SGD,
-                 loss_function=nn.CrossEntropyLoss, learning_rate=0.001):
+    def __init__(self, input_size, output_size, hidden_layers, activation=nn.ReLU, optimizer_type=optim.SGD, loss_function=nn.CrossEntropyLoss, learning_rate=0.001):
         """
-        Initializes the neural network with given architecture and parameters.
-        :param input_size: Number of input features.
-        :param output_size: Number of output neurons.
-        :param hidden_layers: List containing the number of neurons per hidden layer.
-        :param activation: Activation function for hidden layers (default: ReLU).
-        :param optimizer_type: Optimizer (default: Adam).
-        :param loss_function: Loss function (default: MSELoss).
-        :param learning_rate: Learning rate for the optimizer.
+        Initializes the neural network with given architecture and parameters
+        :param input_size: Number of input features
+        :param output_size: Number of output neurons
+        :param hidden_layers: List containing the number of neurons per hidden layer
+        :param activation: Activation function for hidden layers
+        :param optimizer_type: Optimizer: https://www.ruder.io/optimizing-gradient-descent/
+        :param loss_function: Loss function. Possible choices for our problem: NLLLoss, CrossEntropyLoss, KLDivLoss: https://neptune.ai/blog/pytorch-loss-functions
+        :param learning_rate: Learning rate for the optimizer
         """
         super(NeuralNetwork, self).__init__()
 
-        # Construct layers dynamically
         layers = []
         prev_size = input_size
         for hidden in hidden_layers:
@@ -35,7 +32,6 @@ class NeuralNetwork(nn.Module):
         self.optimizer = optimizer_type(self.parameters(), lr=learning_rate)
 
     def forward(self, x):
-        """Forward pass through the network."""
         return self.model(x)
 
     def train_model(self, train_loader, epochs=10):
@@ -56,15 +52,16 @@ class NeuralNetwork(nn.Module):
                 total_loss += loss.item()
             print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_loader):.6f}")
 
-    def predict(self, x):
+    def predict(self, input):
         """
         Makes predictions using the trained model.
-        :param x: Input tensor.
+        :param input: Input tensor.
         :return: Model predictions.
         """
         self.eval()
         with torch.no_grad():
-            return self.forward(x)
+            softmax = nn.Softmax(dim=1)
+            return softmax(self.forward(input))
 
     def evaluate(self, test_loader):
         """
@@ -72,17 +69,27 @@ class NeuralNetwork(nn.Module):
         :param test_loader: PyTorch DataLoader for evaluation.
         """
         self.eval()
-        total_loss = 0
-        with torch.no_grad():
-            for inputs, targets in test_loader:
-                outputs = self.forward(inputs)
-                loss = self.loss_function(outputs, targets)
-                total_loss += loss.item()
-        print(f"Test Loss: {total_loss / len(test_loader):.6f}")
+
+        for idx, (inputs, targets) in enumerate(test_loader):
+            outputs = self.predict(inputs)
+            data = torch.mul(outputs, targets)
+            prob = torch.sum(data, 1)
+            mean = torch.mean(prob)
+
+            print(f"Test probabilities for batch {idx}: {prob}")
+            print(f"Mean: {mean}")
+
+    def goal(self, outputs):
+        conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.player_width, padding=cfg.player_width, padding_mode='zeros', bias=False)
+        conv.weight.data = torch.full_like(conv.weight.data, 1)
+        data = conv(outputs.unsqueeze(0).unsqueeze(0))
+
+        return torch.argmax(data).item() - cfg.player_width // 2 # the result shall be the center of the player and not the lower bound
 
     def summary(self):
-        """Prints a summary of the model architecture."""
-        print(self.model)
+        print("Network: " + str(self.model))
+        print("Optimizer: " + str(self.optimizer))
+        print("Loss-Fct: " + str(self.loss_function))
 
 
 class TrainingData(Dataset):
@@ -93,18 +100,11 @@ class TrainingData(Dataset):
     def __init__(self, inputs, targets):
         """
         Initializes the dataset.
-        :param inputs: Numpy array or tensor of input data.
-        :param targets: Numpy array or tensor of target values.
+        :param inputs: Numpy array of input data.
+        :param targets: Numpy array of target values.
         """
-        if isinstance(inputs, np.ndarray):
-            self.inputs = torch.tensor(inputs, dtype=torch.float32)
-        else:
-            self.inputs = inputs.float()
-
-        if isinstance(targets, np.ndarray):
-            self.targets = torch.tensor(targets, dtype=torch.float32)
-        else:
-            self.targets = targets.float()
+        self.inputs = torch.tensor(inputs, dtype=torch.float32)
+        self.targets = torch.tensor(targets, dtype=torch.float32)
 
     def __len__(self):
         return len(self.inputs)
@@ -113,7 +113,7 @@ class TrainingData(Dataset):
         return self.inputs[index], self.targets[index]
 
     @staticmethod
-    def get_dataloader(inputs, targets, batch_size=32, shuffle=True):
+    def get_dataloader(inputs, targets, batch_size=50, shuffle=True):
         """
         Creates a DataLoader from input and target data.
         :param inputs: Input features.

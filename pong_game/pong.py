@@ -4,10 +4,9 @@ import sys
 import time
 import numpy as np
 import torch
-import torch.nn as nn
 
 sys.path.insert(0, '..')
-import settings as set
+import config as cfg
 import player
 import ball
 import ann
@@ -24,9 +23,10 @@ class Pong:
 		self.playerB = None
 		self.ball = None
 		self.model = model
-		self.pred = [[0,0], [0, set.HEIGHT//2], [0,set.HEIGHT]]
+		self.model_prob = [[0, 0], [0, cfg.HEIGHT // 2], [0, cfg.HEIGHT]]
+		self.model_goal = [[0,0], [0,0]]
 		self.data_beg = np.zeros(shape=(num,4), dtype=float)
-		self.data_end = np.zeros(shape=(num,set.HEIGHT), dtype=float)
+		self.data_end = np.zeros(shape=(num, cfg.HEIGHT), dtype=float)
 		if self.players:
 			self.players = True
 			self.font = pygame.font.SysFont('Bauhaus 93', 60)
@@ -38,40 +38,35 @@ class Pong:
 	def draw(self):
 		pygame.display.flip()
 
-	# create and add player to the screen
 	def generate_world(self):
 		if self.players:
-			self.playerA = player.Player(0, set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
-			self.playerB = player.Player(set.WIDTH - set.player_width,  set.HEIGHT // 2 - (set.player_height // 2), set.player_width, set.player_height)
-		self.ball = ball.Ball(set.WIDTH // 2 - set.player_width, set.HEIGHT // 2 - set.player_width, set.ball_vx_range, set.ball_vy_range, set.ball_size)
-		self.data_beg[self.count, 0] = self.ball.rect.x / set.WIDTH
-		self.data_beg[self.count, 1] = self.ball.rect.y / set.HEIGHT
-		self.data_beg[self.count, 2] = self.ball.vx / max(set.ball_vx_range+set.ball_vy_range)
-		self.data_beg[self.count, 3] = self.ball.vy / max(set.ball_vx_range+set.ball_vy_range)
+			self.playerA = player.Player(0, cfg.HEIGHT // 2 - (cfg.player_height // 2), cfg.player_width, cfg.player_height)
+			self.playerB = player.Player(cfg.WIDTH - cfg.player_width, cfg.HEIGHT // 2 - (cfg.player_height // 2), cfg.player_width, cfg.player_height)
+		self.ball = ball.Ball(cfg.WIDTH // 2 - cfg.player_width, cfg.HEIGHT // 2 - cfg.player_width, cfg.ball_vx_range, cfg.ball_vy_range, cfg.ball_size)
+		self.data_beg[self.count, 0] = self.ball.rect.x / cfg.WIDTH
+		self.data_beg[self.count, 1] = self.ball.rect.y / cfg.HEIGHT
+		self.data_beg[self.count, 2] = self.ball.vx / max(cfg.ball_vx_range + cfg.ball_vy_range)
+		self.data_beg[self.count, 3] = self.ball.vy / max(cfg.ball_vx_range + cfg.ball_vy_range)
 
 	def ball_hit(self):
 		hit = False
-		if self.ball.rect.left >= set.WIDTH:
+		if self.ball.rect.left >= cfg.WIDTH:
 			if self.players:
 				self.playerA.score += 1
-				self.ball.rect.x = set.WIDTH // 2
+				self.ball.rect.x = cfg.WIDTH // 2
 				time.sleep(1)
-			else:
-				raise ValueError('not allowed')	# for data generation the ball always flies left so this cant happen
 			hit = True
 
 		elif self.ball.rect.right <= 0:
+			self.data_end[self.count, self.ball.rect.y:(self.ball.rect.y+self.ball.rect.height)] = 1 # if ball hit the AI side we want this position
+			self.count += 1
 			if self.players:
-				self.data_end[self.count, self.ball.rect.y:(self.ball.rect.y+self.ball.rect.height)] = 1 # if ball hit the AI side we want this position
-				self.count += 1
 				self.playerB.score += 1
-				self.ball.rect.x = set.WIDTH // 2
+				self.ball.rect.x = cfg.WIDTH // 2
 				time.sleep(1)
 			else:
-				self.data_end[self.count, self.ball.rect.y:(self.ball.rect.y+self.ball.rect.height)] = 1 # if ball hit the AI side we want this position
-				self.count += 1
-				self.ball.rect.x = random.randint(self.ball.rect.width, set.WIDTH-2*self.ball.rect.width)
-				self.ball.rect.y = random.randint(0, set.HEIGHT-self.ball.rect.height)
+				self.ball.rect.x = random.randint(0, cfg.WIDTH - self.ball.rect.width)
+				self.ball.rect.y = random.randint(0, cfg.HEIGHT - self.ball.rect.height)
 				self.ball.direction = "left" # for data generation the ball always flies left
 			hit = True
 
@@ -91,7 +86,7 @@ class Pong:
 				if self.playerA.rect.top > 0:
 					self.playerA.move_up()
 			if self.ball.rect.bottom >= self.playerA.rect.bottom:
-				if self.playerA.rect.bottom < set.HEIGHT:
+				if self.playerA.rect.bottom < cfg.HEIGHT:
 					self.playerA.move_bottom()
 
 	def player_move(self):
@@ -102,14 +97,14 @@ class Pong:
 			if self.playerB.rect.top > 0:
 				self.playerB.move_up()
 		if keys[pygame.K_DOWN]:
-			if self.playerB.rect.bottom < set.HEIGHT:
+			if self.playerB.rect.bottom < cfg.HEIGHT:
 				self.playerB.move_bottom()
 
 	def show_score(self):
 		scoreA = self.font.render(str(self.playerA.score), True, self.color)
 		scoreB = self.font.render(str(self.playerB.score), True, self.color)
-		self.screen.blit(scoreA, (set.WIDTH // 4, 50))
-		self.screen.blit(scoreB, ((set.WIDTH // 4) * 3, 50))
+		self.screen.blit(scoreA, (cfg.WIDTH // 4, 50))
+		self.screen.blit(scoreB, ((cfg.WIDTH // 4) * 3, 50))
 
 	def game_end(self):
 		if self.winner is not None:
@@ -143,28 +138,31 @@ class Pong:
 
 		self.ball.update(hit)
 
-		if hit and not end:
-			self.data_beg[self.count, 0] = self.ball.rect.x / set.WIDTH
-			self.data_beg[self.count, 1] = self.ball.rect.y / set.HEIGHT
-			self.data_beg[self.count, 2] = self.ball.vx / max(set.ball_vx_range+set.ball_vy_range)
-			self.data_beg[self.count, 3] = self.ball.vy / max(set.ball_vx_range+set.ball_vy_range)
+		if not end:
+			if hit or self.players:
+				self.data_beg[self.count, 0] = self.ball.rect.x / cfg.WIDTH
+				self.data_beg[self.count, 1] = self.ball.rect.y / cfg.HEIGHT
+				self.data_beg[self.count, 2] = self.ball.vx / max(cfg.ball_vx_range + cfg.ball_vy_range)
+				self.data_beg[self.count, 3] = self.ball.vy / max(cfg.ball_vx_range + cfg.ball_vy_range)
 
 		if self.model is not None:
 			if self.ball.direction == "left":
-				if hit:
-					self.pred = [[0,0]]
-					data_beg = torch.tensor(self.data_beg[self.count], dtype=torch.float)
-					pred = self.model.predict(data_beg)
-					# softmax = nn.Softmax(dim=0)
-					# self.pred = [[1000.0 * softmax(pred)[i].item(), i] for i in  range(set.HEIGHT)]
-					self.pred += [[10*pred[i].item() if pred[i].item() >= 0 else 0, i] for i in range(set.HEIGHT)]
-					self.pred += [[0, set.HEIGHT]]
+				data_beg = torch.tensor(np.array([self.data_beg[self.count]]), dtype=torch.float)
+				pred = self.model.predict(data_beg)[0]
+				goal = self.model.goal(pred)
+
+				self.model_prob = [[0, 0]]
+				self.model_prob += [[100 / torch.max(pred).item() * pred[i].item(), i] for i in range(cfg.HEIGHT)]
+				self.model_prob += [[0, cfg.HEIGHT]]
+				self.model_goal = [[0, goal], [75, goal]]
 			else:
-				self.pred = [[0,0], [0, set.HEIGHT//2], [0,set.HEIGHT]]
+				self.model_prob = [[0, 0], [0, cfg.HEIGHT // 2], [0, cfg.HEIGHT]]
+				self.model_goal = [[0,0], [0,0]]
 
 		if self.players:
 			if self.model is not None:
-				pygame.draw.polygon(self.screen, pygame.Color('darkorange'), self.pred)
+				pygame.draw.polygon(self.screen, pygame.Color('darkorange'), self.model_prob)
+				pygame.draw.lines(self.screen, pygame.Color('red'), False, self.model_goal, width=3)
 			pygame.draw.rect(self.screen, self.ball.color, self.ball.rect)
 
 		return end
@@ -187,8 +185,4 @@ class Pong:
 				self.draw()
 				self.FPS.tick(30)
 
-		# for i in range(self.score_limit):
-		# 	print(self.data_beg[i])
-		# 	print(np.argmax(self.data_end[i]))
-
-		return ann.TrainingData.get_dataloader(self.data_beg, self.data_end, batch_size=20)
+		return ann.TrainingData.get_dataloader(self.data_beg, self.data_end)
