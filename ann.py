@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,7 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 import pong_game.config as cfg
 
 
-class NeuralNetwork(nn.Module):
+class ANN(nn.Module):
     def __init__(self, input_size, output_size, hidden_layers, activation=nn.ReLU, optimizer_type=optim.SGD, loss_function=nn.CrossEntropyLoss, learning_rate=0.001):
         """
         Initializes the neural network with given architecture and parameters
@@ -17,7 +18,7 @@ class NeuralNetwork(nn.Module):
         :param loss_function: Loss function. Possible choices for our problem: NLLLoss, CrossEntropyLoss, KLDivLoss: https://neptune.ai/blog/pytorch-loss-functions
         :param learning_rate: Learning rate for the optimizer
         """
-        super(NeuralNetwork, self).__init__()
+        super(ANN, self).__init__()
 
         layers = []
         prev_size = input_size
@@ -61,7 +62,7 @@ class NeuralNetwork(nn.Module):
         self.eval()
         with torch.no_grad():
             softmax = nn.Softmax(dim=1)
-            return softmax(self.forward(input))
+            return softmax(self.forward(input))[0]
 
     def evaluate(self, test_loader):
         """
@@ -79,12 +80,14 @@ class NeuralNetwork(nn.Module):
             print(f"Test probabilities for batch {idx}: {prob}")
             print(f"Mean: {mean}")
 
-    def goal(self, outputs):
-        conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.player_width, padding=cfg.player_width, padding_mode='zeros', bias=False)
+    def ball_prob(self, output):
+        conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.player_width, padding='same', padding_mode='zeros', bias=False)
         conv.weight.data = torch.full_like(conv.weight.data, 1)
-        data = conv(outputs.unsqueeze(0).unsqueeze(0))
 
-        return torch.argmax(data).item() - cfg.player_width // 2 # the result shall be the center of the player and not the lower bound
+        return conv(output.unsqueeze(0))[0]
+
+    def ball_goal(self, output):
+        return np.sum([i * output[i].item() for i in range(output.size(dim=0))]) / torch.sum(output).item() # we calculate the expectation value (y-index) of the output (distribution)
 
     def summary(self):
         print("Network: " + str(self.model))

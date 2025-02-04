@@ -1,4 +1,6 @@
 import pygame
+import config as cfg
+
 
 class Player:
 	def __init__(self, x, y, width, height):
@@ -6,15 +8,10 @@ class Player:
 		self.y = y
 		self.rect = pygame.Rect(self.x, self.y, width, height)
 		self.color = pygame.Color("gray")
-		self.player_speed = 16
-	
 		self.score = 0
 
-	def move_up(self):
-		self.rect.y -= self.player_speed
-
-	def move_bottom(self):
-		self.rect.y += self.player_speed
+	def move(self, dist):
+		self.rect.y = max(0, min(cfg.HEIGHT - cfg.player_height, self.rect.y + dist))
 
 	def update(self, screen):
 		pygame.draw.rect(screen, self.color, self.rect)

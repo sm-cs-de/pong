@@ -26,7 +26,7 @@ class Pong:
 						pygame.quit()
 						sys.exit()
 
-				game.player_move()
+				game.player_hum_move()
 
 			game.update()
 
