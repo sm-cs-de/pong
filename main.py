@@ -11,7 +11,7 @@ import pong_game.config as cfg
 
 
 if __name__ == "__main__":
-    train_pong = pong.Pong(None, 2000)
+    train_pong = pong.Pong(None, 20000)
     train_data = train_pong.main()
     del train_pong
 

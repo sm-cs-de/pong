@@ -53,11 +53,21 @@ class Pong:
 
 		if self.ann is not None:
 			self.ball_dist = torch.tensor(np.zeros(cfg.HEIGHT), dtype=torch.float)
-			self.ball_dist[cfg.HEIGHT // 2 - cfg.ball_size // 2: cfg.HEIGHT // 2 + cfg.ball_size // 2] = 1  # we use the mid as target
-			if self.dqn is not None:
-				state = np.concatenate([self.ball_dist, [self.player_cpu.y]], axis=0)
-				self.dqn.buffer.push(state, 0, 1, state, False)
-	def ball_hit(self):
+			self.ball_dist[cfg.HEIGHT//2 - cfg.ball_size//2 : cfg.HEIGHT//2 + cfg.ball_size//2] = 1.0 / cfg.ball_size  # we use the mid as target
+			# if self.dqn is not None:
+			# 	state = np.concatenate([self.ball_dist, [self.player_cpu.y]], axis=0)
+			# 	self.dqn.buffer.push(state, cfg.player_move_distances.index(0), 1, state, False)
+
+	def get_ball_prob(self, ann_output):
+		conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.player_width, padding='same', padding_mode='zeros', bias=False)
+		conv.weight.data = torch.full_like(conv.weight.data, 1)
+
+		return conv(ann_output.unsqueeze(0))[0]
+
+	def get_ball_goal(self, ann_output):
+		return np.sum([i * ann_output[i].item() for i in range(ann_output.size(dim=0))]) / torch.sum(ann_output).item()  # we calculate the expectation value (y-index) of the output (distribution)
+
+	def get_ball_hit(self):
 		hit = False
 		if self.ball.rect.left >= cfg.WIDTH:
 			if self.players:
@@ -67,7 +77,7 @@ class Pong:
 			hit = True
 
 		elif self.ball.rect.right <= 0:
-			self.ball_end[self.count, self.ball.rect.y : (self.ball.rect.y + cfg.ball_size)] = 1 # if ball hit the AI side we want its y impact location
+			self.ball_end[self.count, self.ball.rect.y : (self.ball.rect.y + cfg.ball_size)] = 1.0  # only relevant for training; we use the whole y impact location and larger values to improve training process
 			self.count += 1
 			if self.players:
 				self.player_hum.score += 1
@@ -89,19 +99,22 @@ class Pong:
 
 		return hit
 
-	def player_cpu_move(self):
+	def player_cpu_move_default(self):
 		if self.ball.direction == "left" and self.ball.rect.centery != self.player_cpu.rect.centery:
 			if self.ball.rect.top <= self.player_cpu.rect.top:
-				self.player_cpu.move(cfg.player_move_dist[0])
+				self.player_cpu.move(cfg.player_move_distances[0])
 			if self.ball.rect.bottom >= self.player_cpu.rect.bottom:
-				self.player_cpu.move(cfg.player_move_dist[1])
+				self.player_cpu.move(cfg.player_move_distances[-1])
+
+	def player_cpu_move_agent(self, distance):
+		self.player_cpu.move(distance)
 
 	def player_hum_move(self):
 		keys = pygame.key.get_pressed()
 		if keys[pygame.K_UP]:
-			self.player_hum.move(cfg.player_move_dist[0])
+			self.player_hum.move(cfg.player_move_distances[0])
 		if keys[pygame.K_DOWN]:
-			self.player_hum.move(cfg.player_move_dist[1])
+			self.player_hum.move(cfg.player_move_distances[-1])
 
 	def show_score(self):
 		scoreA = self.font.render(str(self.player_cpu.score), True, self.color)
@@ -122,13 +135,9 @@ class Pong:
 	def update(self):
 		end = False
 
-		hit = self.ball_hit()
+		hit = self.get_ball_hit()
 
 		if self.players:
-			self.show_score()
-			self.player_cpu.update(self.screen)
-			self.player_hum.update(self.screen)
-
 			if self.player_cpu.score == self.score_limit:
 				self.winner = "Opponent"
 			elif self.player_hum.score == self.score_limit:
@@ -148,23 +157,39 @@ class Pong:
 				self.ball_start[self.count, 2] = self.ball.vx / max(cfg.ball_vx_range + cfg.ball_vy_range)
 				self.ball_start[self.count, 3] = self.ball.vy / max(cfg.ball_vx_range + cfg.ball_vy_range)
 
+		cpu_move_distance = 0
 		if self.ann is not None:
 			if self.ball.direction == "left":
 				data_beg = torch.tensor(np.array([self.ball_start[self.count]]), dtype=torch.float)
 				self.ball_dist = self.ann.predict(data_beg)
 			else:
 				self.ball_dist = torch.tensor(np.zeros(cfg.HEIGHT), dtype=torch.float)
-				self.ball_dist[cfg.HEIGHT // 2 - cfg.ball_size // 2: cfg.HEIGHT // 2 + cfg.ball_size // 2] = 1 # we use the mid as target
-			self.ball_prob = self.ann.ball_prob(self.ball_dist)
-			self.ball_goal = self.ann.ball_goal(self.ball_dist)
+				self.ball_dist[cfg.HEIGHT // 2 - cfg.ball_size // 2: cfg.HEIGHT // 2 + cfg.ball_size // 2] = 1.0 / cfg.ball_size # we use the mid as target
+			self.ball_prob = self.get_ball_prob(self.ball_dist)
+			self.ball_goal = self.get_ball_goal(self.ball_dist)
 
 			if self.dqn is not None:
-				state = np.concatenate([self.ball_prob.tolist(), [self.player_cpu.rect.y]], axis=0)
-				dist = self.dqn.get_action(state)
-				reward = self.ball_prob[self.player_cpu.rect.y]
-				done = False
-				# self.dqn.buffer.push()
-				self.dqn.train_step()
+				player_cpu_y = self.player_cpu.rect.y
+				print("## DQGN for " + str(player_cpu_y))
+
+				self.dqn.reset()
+				state = np.concatenate([self.ball_prob.tolist(), [player_cpu_y]], axis=0)
+				self.dqn.buffer.push(state, cfg.player_move_distances.index(0), 1, state, False)
+
+				for i in range(0, 100):
+					cpu_move_action = self.dqn.get_action(state)
+					player_cpu_y = max(0, min(cfg.HEIGHT - cfg.player_height, player_cpu_y + cfg.player_move_distances[cpu_move_action]))
+					# self.player_cpu_move_agent(cpu_move_distance)
+					reward = self.ball_prob[player_cpu_y].item()
+					done = False
+					state[-1] = player_cpu_y
+					self.dqn.buffer.append(state, cpu_move_action, reward, done)
+					self.dqn.train_step()
+					print(f"{i}: {cpu_move_action} {player_cpu_y} {reward} {state[-1]}")
+
+				cpu_move_action = self.dqn.get_action(state)
+				cpu_move_distance = cfg.player_move_distances[cpu_move_action]
+				print(cpu_move_distance)
 
 		if self.players:
 			if self.ann is not None:
@@ -175,11 +200,17 @@ class Pong:
 				pygame.draw.lines(self.screen, pygame.Color('red'), False, ball_goal, width=3)
 			pygame.draw.rect(self.screen, self.ball.color, self.ball.rect)
 
-		return end
+		if self.players:
+			self.show_score()
+			self.player_cpu.update(self.screen)
+			self.player_hum.update(self.screen)
+
+		return cpu_move_distance, end
 
 	def main(self):
 		end = False
 		while not end:
+
 			if self.players:
 				self.screen.fill("black")
 
@@ -187,12 +218,16 @@ class Pong:
 					if event.type == pygame.QUIT:
 						self.winner = "Nobody"
 						self.game_end()
-				self.player_hum_move()
-				self.player_cpu_move()
 
-			end = self.update()
+			cpu_move_distance, end = self.update()
 
 			if self.players:
+				self.player_hum_move()
+				if self.ann is not None and self.dqn is not None:
+					self.player_cpu_move_agent(cpu_move_distance)
+				else:
+					self.player_cpu_move_default()
+
 				self.draw()
 				self.FPS.tick(30)
 
