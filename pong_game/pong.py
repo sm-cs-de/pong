@@ -13,7 +13,7 @@ import ann
 
 
 class Pong:
-	def __init__(self, screen, num, ann = None, dqn = None):
+	def __init__(self, screen, num, ann=None):
 		self.screen = screen
 		self.game_over = False
 		self.count = 0
@@ -24,7 +24,6 @@ class Pong:
 		self.player_hum = None
 		self.ball = None
 		self.ann = ann
-		self.dqn = dqn
 		self.ball_dist = None
 		self.ball_prob = None
 		self.ball_goal = None
@@ -45,7 +44,7 @@ class Pong:
 		if self.players:
 			self.player_cpu = player.Player(0, cfg.HEIGHT // 2 - (cfg.player_height // 2), cfg.player_width, cfg.player_height)
 			self.player_hum = player.Player(cfg.WIDTH - cfg.player_width, cfg.HEIGHT // 2 - (cfg.player_height // 2), cfg.player_width, cfg.player_height)
-		self.ball = ball.Ball(cfg.WIDTH // 2 - cfg.player_width, cfg.HEIGHT // 2 - cfg.player_width, cfg.ball_vx_range, cfg.ball_vy_range, cfg.ball_size)
+		self.ball = ball.Ball(cfg.WIDTH // 2 - cfg.ball_size//2, cfg.HEIGHT // 2 - cfg.ball_size//2, cfg.ball_vx_range, cfg.ball_vy_range, cfg.ball_size)
 		self.ball_start[self.count, 0] = self.ball.rect.x / cfg.WIDTH
 		self.ball_start[self.count, 1] = self.ball.rect.y / cfg.HEIGHT
 		self.ball_start[self.count, 2] = self.ball.vx / max(cfg.ball_vx_range + cfg.ball_vy_range)
@@ -54,25 +53,22 @@ class Pong:
 		if self.ann is not None:
 			self.ball_dist = torch.tensor(np.zeros(cfg.HEIGHT), dtype=torch.float)
 			self.ball_dist[cfg.HEIGHT//2 - cfg.ball_size//2 : cfg.HEIGHT//2 + cfg.ball_size//2] = 1.0 / cfg.ball_size  # we use the mid as target
-			# if self.dqn is not None:
-			# 	state = np.concatenate([self.ball_dist, [self.player_cpu.y]], axis=0)
-			# 	self.dqn.buffer.push(state, cfg.player_move_distances.index(0), 1, state, False)
 
 	def get_ball_prob(self, ann_output):
-		conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.player_width, padding='same', padding_mode='zeros', bias=False)
-		conv.weight.data = torch.full_like(conv.weight.data, 1)
+		conv = torch.nn.Conv1d(in_channels=1, out_channels=1, kernel_size=cfg.ball_size, padding='same', padding_mode='zeros', bias=False)
+		conv.weight.data = torch.full_like(conv.weight.data, 1.0 / cfg.ball_size)
 
 		return conv(ann_output.unsqueeze(0))[0]
 
 	def get_ball_goal(self, ann_output):
-		return np.sum([i * ann_output[i].item() for i in range(ann_output.size(dim=0))]) / torch.sum(ann_output).item()  # we calculate the expectation value (y-index) of the output (distribution)
+		return np.sum([i * ann_output[i].item() for i in range(ann_output.size(dim=0))])  # we calculate the expectation value (y-index) of the output (distribution)
 
 	def get_ball_hit(self):
 		hit = False
 		if self.ball.rect.left >= cfg.WIDTH:
 			if self.players:
 				self.player_cpu.score += 1
-				self.ball.rect.x = cfg.WIDTH // 2
+				self.ball.rect.x = 100
 				time.sleep(1)
 			hit = True
 
@@ -81,12 +77,12 @@ class Pong:
 			self.count += 1
 			if self.players:
 				self.player_hum.score += 1
-				self.ball.rect.x = cfg.WIDTH // 2
+				self.ball.rect.x = cfg.WIDTH - 100
 				time.sleep(1)
 			else:
 				self.ball.rect.x = random.randint(0, cfg.WIDTH - self.ball.rect.width)
 				self.ball.rect.y = random.randint(0, cfg.HEIGHT - self.ball.rect.height)
-				self.ball.direction = "left" # for data generation the ball always flies left
+				self.ball.direction = "left"  # for data generation the ball always flies left
 			hit = True
 
 		if self.players:
@@ -134,7 +130,6 @@ class Pong:
 
 	def update(self):
 		end = False
-
 		hit = self.get_ball_hit()
 
 		if self.players:
@@ -164,37 +159,16 @@ class Pong:
 				self.ball_dist = self.ann.predict(data_beg)
 			else:
 				self.ball_dist = torch.tensor(np.zeros(cfg.HEIGHT), dtype=torch.float)
-				self.ball_dist[cfg.HEIGHT // 2 - cfg.ball_size // 2: cfg.HEIGHT // 2 + cfg.ball_size // 2] = 1.0 / cfg.ball_size # we use the mid as target
+				self.ball_dist[cfg.HEIGHT//2 - cfg.ball_size//2: cfg.HEIGHT//2 + cfg.ball_size//2] = 1.0 / cfg.ball_size  # we use the mid as target
 			self.ball_prob = self.get_ball_prob(self.ball_dist)
 			self.ball_goal = self.get_ball_goal(self.ball_dist)
 
-			if self.dqn is not None:
-				player_cpu_y = self.player_cpu.rect.y
-				print("## DQGN for " + str(player_cpu_y))
-
-				self.dqn.reset()
-				state = np.concatenate([self.ball_prob.tolist(), [player_cpu_y]], axis=0)
-				self.dqn.buffer.push(state, cfg.player_move_distances.index(0), 1, state, False)
-
-				for i in range(0, 100):
-					cpu_move_action = self.dqn.get_action(state)
-					player_cpu_y = max(0, min(cfg.HEIGHT - cfg.player_height, player_cpu_y + cfg.player_move_distances[cpu_move_action]))
-					# self.player_cpu_move_agent(cpu_move_distance)
-					reward = self.ball_prob[player_cpu_y].item()
-					done = False
-					state[-1] = player_cpu_y
-					self.dqn.buffer.append(state, cpu_move_action, reward, done)
-					self.dqn.train_step()
-					print(f"{i}: {cpu_move_action} {player_cpu_y} {reward} {state[-1]}")
-
-				cpu_move_action = self.dqn.get_action(state)
-				cpu_move_distance = cfg.player_move_distances[cpu_move_action]
-				print(cpu_move_distance)
+			cpu_move_distance = max(cfg.player_move_distances[0], min(cfg.player_move_distances[-1], self.ball_goal - self.player_cpu.rect.y - cfg.player_height//2))
 
 		if self.players:
 			if self.ann is not None:
 				ball_prob = [[0, 0]] + [[100 / torch.max(self.ball_prob).item() * self.ball_prob[i].item(), i] for i in range(cfg.HEIGHT)] + [[0, cfg.HEIGHT]]
-				pygame.draw.polygon(self.screen, pygame.Color('darkorange'), ball_prob)
+				pygame.draw.polygon(self.screen, pygame.Color('darkgreen'), ball_prob)
 
 				ball_goal = [[0, self.ball_goal], [100, self.ball_goal]]
 				pygame.draw.lines(self.screen, pygame.Color('red'), False, ball_goal, width=3)
@@ -223,7 +197,7 @@ class Pong:
 
 			if self.players:
 				self.player_hum_move()
-				if self.ann is not None and self.dqn is not None:
+				if self.ann is not None:
 					self.player_cpu_move_agent(cpu_move_distance)
 				else:
 					self.player_cpu_move_default()

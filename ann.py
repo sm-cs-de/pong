@@ -1,9 +1,7 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-import pong_game.config as cfg
 
 
 class ANN(nn.Module):
@@ -62,6 +60,7 @@ class ANN(nn.Module):
         self.eval()
         with torch.no_grad():
             softmax = nn.Softmax(dim=1)
+
             return softmax(self.forward(input))[0]
 
     def evaluate(self, test_loader):
@@ -107,7 +106,7 @@ class TrainingData(Dataset):
         return self.inputs[index], self.targets[index]
 
     @staticmethod
-    def get_dataloader(inputs, targets, batch_size=50, shuffle=True):
+    def get_dataloader(inputs, targets, batch_size=100, shuffle=True):
         """
         Creates a DataLoader from input and target data.
         :param inputs: Input features.
@@ -118,6 +117,3 @@ class TrainingData(Dataset):
         """
         dataset = TrainingData(inputs, targets)
         return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-
-
-
