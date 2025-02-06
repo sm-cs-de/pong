@@ -7,7 +7,7 @@ class Player:
 		self.x = x
 		self.y = y
 		self.rect = pygame.Rect(self.x, self.y, width, height)
-		self.color = pygame.Color("gray")
+		self.color = pygame.Color("black")
 		self.score = 0
 
 	def move(self, dist):

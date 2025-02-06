@@ -1,3 +1,4 @@
+# https://atlane.de/deep-q-networks-eine-revolution-im-reinforcement-learning/
 import random
 import numpy as np
 import torch
@@ -5,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 
-import pong_game.config as cfg
+import game.config as cfg
 
 
 class Buffer:

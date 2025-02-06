@@ -3,9 +3,9 @@ import sys
 import pygame
 import ann
 
-sys.path.insert(0, './pong_game')
-import pong_game.pong as pong
-import pong_game.config as cfg
+sys.path.insert(0, 'game')
+import game.pong as pong
+import game.config as cfg
 
 
 if __name__ == "__main__":

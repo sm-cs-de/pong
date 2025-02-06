@@ -33,7 +33,7 @@ class Pong:
 			self.players = True
 			self.font = pygame.font.SysFont('Bauhaus 93', 60)
 			self.inst_font = pygame.font.SysFont('Bauhaus 93', 30)
-			self.color = pygame.Color("white")
+			self.color = pygame.Color("black")
 		self.generate()
 		self.FPS = pygame.time.Clock()
 
@@ -186,7 +186,7 @@ class Pong:
 		while not end:
 
 			if self.players:
-				self.screen.fill("black")
+				self.screen.fill("lightgray")
 
 				for event in pygame.event.get():
 					if event.type == pygame.QUIT:
