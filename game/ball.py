@@ -1,5 +1,6 @@
 import pygame
 import random
+import numpy as np
 import config as cfg
 
 pygame.init()
@@ -21,17 +22,12 @@ class Ball:
 				self.vx = random.randint(self.vx_range[0], self.vx_range[1])
 			else:
 				self.vx = -random.randint(self.vx_range[0], self.vx_range[1])
+			self.vy = np.sign(self.vy) * random.randint(self.vy_range[0], self.vy_range[1])
 
 		if self.rect.y >= cfg.HEIGHT - self.size:
-			if hit:
-				self.vy = -random.randint(self.vy_range[0], self.vy_range[1])
-			else:
-				self.vy = -self.vy
+			self.vy = -random.randint(self.vy_range[0], self.vy_range[1])
 		elif self.rect.y <= 0 + self.size:
-			if hit:
-				self.vy = random.randint(self.vy_range[0], self.vy_range[1])
-			else:
-				self.vy = -self.vy
+			self.vy = random.randint(self.vy_range[0], self.vy_range[1])
 
 		self.rect.x += self.vx
 		self.rect.y += self.vy

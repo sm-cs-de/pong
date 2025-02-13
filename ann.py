@@ -20,10 +20,10 @@ class ANN(nn.Module):
 
         layers = []
         prev_size = input_size
-        for hidden in hidden_layers:
-            layers.append(nn.Linear(prev_size, hidden))
+        for layer in hidden_layers:
+            layers.append(nn.Linear(prev_size, layer))
             layers.append(activation())
-            prev_size = hidden
+            prev_size = layer
         layers.append(nn.Linear(prev_size, output_size))
 
         self.model = nn.Sequential(*layers)
@@ -33,7 +33,7 @@ class ANN(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-    def train_model(self, train_loader, epochs=10):
+    def train_model(self, train_loader, epochs=20):
         """
         Trains the model using the given dataset.
         :param train_loader: PyTorch DataLoader for training.
@@ -86,10 +86,6 @@ class ANN(nn.Module):
 
 
 class TrainingData(Dataset):
-    """
-    Handles dataset creation and loading for training and evaluation.
-    """
-
     def __init__(self, inputs, targets):
         """
         Initializes the dataset.
