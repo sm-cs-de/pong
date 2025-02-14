@@ -43,8 +43,8 @@ class DQN:
         self.buffer_update = buffer_update
         self.buffer_batch = buffer_batch
 
-        self.online_net = nn.Sequential(nn.Linear(cfg.HEIGHT+1, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, len(cfg.player_move_distances)))
-        self.target_net = nn.Sequential(nn.Linear(cfg.HEIGHT+1, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, len(cfg.player_move_distances)))
+        self.online_net = nn.Sequential(nn.Linear(cfg.HEIGHT+1, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, len(cfg.player_moves)))
+        self.target_net = nn.Sequential(nn.Linear(cfg.HEIGHT+1, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, len(cfg.player_moves)))
         self.target_net.load_state_dict(self.online_net.state_dict())
         self.target_net.eval()
 
@@ -73,7 +73,7 @@ class DQN:
         self.eps = max(self.eps_min, self.eps - (1.0 / self.eps_red))
 
         if random.random() < self.eps:
-            return random.randint(0, len(cfg.player_move_distances)-1)
+            return random.randint(0, len(cfg.player_moves) - 1)
         else:
             state_t = torch.FloatTensor(state).unsqueeze(0)  # shape (1, state_dim)
             with torch.no_grad():

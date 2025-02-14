@@ -10,13 +10,13 @@ import game.config as cfg
 
 
 if __name__ == "__main__":
-    train_pong = pong.Pong(None, 10000)
+    train_pong = pong.Pong(None, 100000)
     train_data = train_pong.main()
     del train_pong
 
     ann = ann.ANN(input_size=4, output_size=cfg.HEIGHT, hidden_layers=[200, 200, 200], learning_rate=0.02)
     ann.summary()
-    ann.train_model(train_data, epochs=20)
+    ann.train_model(train_data, epochs=30)
 
     test_pong = pong.Pong(None, 500)
     test_data = test_pong.main()
